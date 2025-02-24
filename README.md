@@ -6,7 +6,8 @@ pip install -r requirements.txt
 ```
 
 ## Prepare Dataset
-Download NTIRE (Baidu Disk[LINK](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd=ntir)), ICVL[LINK](Baidu Disk[LINK](https://pan.baidu.com/s/12Tangm7beo_to8OcQKtbvg?pwd=icvl), code: icvl), Harvard (Baidu Disk [LINK](https://pan.baidu.com/s/1ui2SsR3EFMVTFBUrDvD3Zg?pwd=hard), code: hard), and then put them into the corresponding folders of data/ and recollect them as the following form:
+Download NTIRE ([Baidu Disk](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd=ntir)), ICVL ([Baidu Disk]((https://pan.baidu.com/s/12Tangm7beo_to8OcQKtbvg?pwd=icvl), code: icvl)), Harvard([Baidu Disk](https://pan.baidu.com/s/1ui2SsR3EFMVTFBUrDvD3Zg?pwd=hard), code: hard), and then put them into the corresponding folders of data/ and recollect them as the following form:
+```
 |--DiFASCI
     :
     |--data
@@ -49,9 +50,10 @@ Download NTIRE (Baidu Disk[LINK](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw
             |--scene200.mat
           |--harvard_train.list
           |--harvard_test.list
+```
 
 ## Test:
-Download the pre-trained model zoo from (Baidu Disk[LINK](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo)) and place them to \model_zoo\DiFA and \model_zoo\DiFA
+Download the pre-trained model zoo from ([Baidu Disk](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo)) and place them to \model_zoo\DiFA and \model_zoo\DiFA
 
 ```sh
 # Original model (w/o DiFA)
@@ -65,8 +67,9 @@ python inference -i [image folder/image path] --ckpt [model folder/model path] -
 python inference -i data/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
 ```
 
-## Train the model
-Download the necessary pre-trained model, i.e., pretrained Teacher model Resshift, Autoencoder and MSItoRGBnetwork (Baidu Disk[LINK]https://pan.baidu.com/s/1biDFqlwSqOhj9S7yZ12_eA?pwd=weig), and place them to \model_zoo\weights. pretrained initial predictor (Baidu Disk[LINK]https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), place them to \model_zoo\weights. And recollect them as the following form:
+## Train
+Download the necessary pre-trained model, i.e., pretrained Teacher model Resshift, Autoencoder and MSItoRGBnetwork ([Baidu Disk]https://pan.baidu.com/s/1biDFqlwSqOhj9S7yZ12_eA?pwd=weig), and place them to \model_zoo\weights. pretrained initial predictor ([Baidu Disk]https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), place them to \model_zoo\weights. And recollect them as the following form:
+```
 |--DiFASCI
     :
     |--model_zoo
@@ -85,6 +88,7 @@ Download the necessary pre-trained model, i.e., pretrained Teacher model Resshif
       |--padut_3stg.pth
       |--dauhst_9stg.pth
       |--dpu_9stg.pkl
+```
 
 1. Adjust the data path in the config file. Specifically, correct and complete paths in files of [traindata](./traindata/)
 2. Adjust batchsize according your GPUS.
