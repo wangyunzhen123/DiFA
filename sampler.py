@@ -25,33 +25,6 @@ from thop import profile
 torch.cuda.device_count()
 torch.empty(2, device='cuda')
 
-import torch
-import torch.nn.functional as F
-
-def psnr_single(ref, img):
-    PIXEL_MAX = 1.0  # 假设图像已经归一化到 [0, 1] 范围内
-    mse = F.mse_loss(img, ref)
-    psnr = 20 * torch.log10(PIXEL_MAX / torch.sqrt(mse + 1e-10))  # 避免除以零
-    return psnr
-
-import numpy as np
-
-def psnr_block(img, ref):
-    # 确保 img 和 ref 的维度一致，且已经归一化到 [0, 1]
-    assert img.shape == ref.shape, "图像和参考图像的维度必须相同"
-    
-    # 假设图像的像素值范围为 [0, 1]
-    PIXEL_MAX = 1.0
-    
-    # 计算 MSE（均方误差），在空间和通道维度上取平均
-    mse = np.mean((img - ref) ** 2, axis=(1, 2))  # 在 H, W, C 维度上求均值
-    
-    # 计算 PSNR，避免除以零
-    psnr = 20 * np.log10(PIXEL_MAX / np.sqrt(mse + 1e-10))
-    
-    # 返回所有图像的平均 PSNR
-    return np.mean(psnr)
-
 class BaseSampler:
     def __init__(
             self,
@@ -238,7 +211,7 @@ class Sampler(BaseSampler):
                im_lq = model(input_meas)
                residual = (_process_per_image(im_lq, meas.to(device)) + 1) / 2
             elif(pretrained_model == "mst"):
-               mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi")
+               mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi", device = gt.device)
                mask3d_batch_train = mask3d_batch_train.to(device)
                input_train_mask = input_train_mask.to(device)
                meas = init_meas(gt, mask3d_batch_train, "H")
@@ -278,9 +251,9 @@ class Sampler(BaseSampler):
             print(f"SSIM: {ssim_value} dB")
             ssim_values.append(ssim_value)
             i = i + 1       
-        sio.savemat("results/lq.mat", {'truth':  results_gt, 'pred':  results_lq})
-        sio.savemat("results/residual.mat", {'truth':  results_gt, 'pred': results_residual})
-        sio.savemat("results/hq.mat",  {'truth':  results_gt, 'pred':  results_inference})
+        sio.savemat("results/initial_predictor.mat", {'truth':  results_gt, 'pred':  results_lq})
+        sio.savemat("results/one_step_diffusion.mat", {'truth':  results_gt, 'pred': results_residual})
+        sio.savemat("results/refined.mat",  {'truth':  results_gt, 'pred':  results_inference})
         average_psnr = np.mean(np.array(psnr_values))
         print(f"Average_PSNR: {average_psnr} dB")
         average_ssim = np.mean(np.array(ssim_values))

@@ -28,30 +28,6 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 import torch
 import torch.nn.functional as F
 
-def psnr_single(ref, img):
-    PIXEL_MAX = 1.0  # 假设图像已经归一化到 [0, 1] 范围内
-    mse = F.mse_loss(img, ref)
-    psnr = 20 * torch.log10(PIXEL_MAX / torch.sqrt(mse + 1e-10))  # 避免除以零
-    return psnr
-
-import numpy as np
-
-def psnr_block(img, ref):
-    # 确保 img 和 ref 的维度一致，且已经归一化到 [0, 1]
-    assert img.shape == ref.shape, "图像和参考图像的维度必须相同"
-    
-    # 假设图像的像素值范围为 [0, 1]
-    PIXEL_MAX = 1.0
-    
-    # 计算 MSE（均方误差），在空间和通道维度上取平均
-    mse = np.mean((img - ref) ** 2, axis=(1, 2))  # 在 H, W, C 维度上求均值
-    
-    # 计算 PSNR，避免除以零
-    psnr = 20 * np.log10(PIXEL_MAX / np.sqrt(mse + 1e-10))
-    
-    # 返回所有图像的平均 PSNR
-    return np.mean(psnr)
-
 class BaseSampler:
     def __init__(
             self,
@@ -113,7 +89,7 @@ class BaseSampler:
         log_str = f'Building the diffusion model with length: {self.configs.diffusion.params.steps}...'
         self.write_log(log_str)
         self.base_diffusion = util_common.instantiate_from_config(self.configs.diffusion)
-        model = util_common.instantiate_from_config(self.configs.model).to("cuda:3")
+        model = util_common.instantiate_from_config(self.configs.model).to(self.configs.train.gpu)
         ckpt_path =self.configs.model.ckpt_path
         assert ckpt_path is not None
         self.write_log(f'Loading Diffusion model from {ckpt_path}...')
@@ -126,7 +102,7 @@ class BaseSampler:
         self.autoencoder = None
 
     def load_model(self, model, ckpt_path=None):
-        state = torch.load(ckpt_path, map_location=f"cuda:3")
+        state = torch.load(ckpt_path)
         if 'state_dict' in state:
             state = state['state_dict']
         util_net.reload_model(model, state)
@@ -180,7 +156,7 @@ class Sampler(BaseSampler):
         return results.clamp_(-1.0, 1.0)
 
     
-    def inference(self, in_path, out_path, bs=1, noise_repeat=False, one_step=False, return_tensor=False, apply_decoder=False, model=None, dataset=None, pretrained_model=None):
+    def inference(self, in_path, out_path, bs=1, noise_repeat=False, one_step=False, return_tensor=False, apply_decoder=False, model=None, dataset=None, pretrained_model=None, device=None):
         '''
         Inference demo.
         Input:
@@ -236,7 +212,7 @@ class Sampler(BaseSampler):
                     drop_last=False,
                     )
             for micro_data in dataloader:
-                results = _process_per_image(micro_data['lq'].to("cuda:3"))    # b x h x w x c, [0, 1], RGB
+                results = _process_per_image(micro_data['lq'].to(device))    # b x h x w x c, [0, 1], RGB
                 for jj in range(results.shape[0]):
                     im_sr = util_image.tensor2img(results[jj], rgb2bgr=True, min_max=(0.0, 1.0))
                     im_name = Path(micro_data['path'][jj]).stem
@@ -248,7 +224,7 @@ class Sampler(BaseSampler):
         else:
             if not in_path.is_dir():
                 im_lq = util_image.imread(in_path, chn='rgb', dtype='float32')  # h x w x c
-                im_lq_tensor = util_image.img2tensor(im_lq).to("cuda:3")              # 1 x c x h x w
+                im_lq_tensor = util_image.img2tensor(im_lq).to(device)              # 1 x c x h x w
                 im_sr_tensor = _process_per_image(im_lq_tensor)
                 im_sr = util_image.tensor2img(im_sr_tensor, rgb2bgr=True, min_max=(0.0, 1.0))
 
@@ -257,10 +233,7 @@ class Sampler(BaseSampler):
                 if return_tensor:
                     return_res[im_path.stem]=im_sr_tensor
             else:
-                #im_path_list = [x for x in in_path.glob("*.mat")]
-                #im_path_list = sorted(x for x in in_path.glob("*.mat"))
                 import re
-                # 使用正则表达式提取文件名中的数字部分，并根据这些数字排序
                 im_path_list = sorted([x for x in in_path.glob("*.mat")], key=lambda x: int(re.search(r'(\d+)', x.name).group()))
                 self.write_log(f'Find {len(im_path_list)} images in {in_path}')
                 batch_size = 10
@@ -268,111 +241,62 @@ class Sampler(BaseSampler):
                 results_lq = np.zeros((batch_size, 256, 256, 28), dtype=np.float32)
                 ssim_values = []
                 psnr_values = []
-                results_residual = np.zeros((batch_size, 256, 256, 28), dtype=np.float32)
-                results_inference = np.zeros((batch_size, 256, 256, 28), dtype=np.float32)
                 i = 0
                 for im_path in im_path_list:
                     if(dataset == "ntire"):
-                       gt = LoadNTIRETesting(im_path).unsqueeze(0).to("cuda:3")
+                       gt = LoadNTIRETesting(im_path).unsqueeze(0).to(device)
                     elif(dataset == "icvl"):
-                       gt = LoadICVLTesting(im_path).unsqueeze(0).to("cuda:3")
-                    elif(dataset == "cave"):
-                       gt = torch.from_numpy(LoadCAVETesting(im_path)).permute(2, 0, 1).unsqueeze(0).to("cuda:3")
+                       gt = LoadICVLTesting(im_path).unsqueeze(0).to(device)
                     elif(dataset == "harvard"):
-                       gt = LoadHarvardTesting(im_path).unsqueeze(0).to("cuda:3")
-
+                       gt = LoadHarvardTesting(im_path).unsqueeze(0).to(device)
                     if(pretrained_model == "padut" or pretrained_model == "dauhst" or pretrained_model == "admm"):
-                       mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi_PhiPhiT")
-                       mask3d_batch_train = mask3d_batch_train.to("cuda:3")
-                       meas = init_meas(gt, mask3d_batch_train, "Y")
+                       mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi_PhiPhiT", device = device)
+                       mask3d_batch_train = mask3d_batch_train.to(device)
+                       meas = init_meas(gt, mask3d_batch_train, "Y").to(device)
                        im_lq = model(meas, input_train_mask)
-                       #residual = (_process_per_image(im_lq, meas.to("cuda:3")) + 1) / 2
-                       #residual = _process_per_image(im_lq, meas.to("cuda:3"))
                     if(pretrained_model == "hdnet"):
-                       mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi_PhiPhiT")
-                       mask3d_batch_train = mask3d_batch_train.to("cuda:3")
+                       mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi_PhiPhiT", device = device)
+                       mask3d_batch_train = mask3d_batch_train.to(device)
                        input_meas, meas = init_meas(gt, mask3d_batch_train, "H")
-                       input_meas = input_meas.to("cuda:3")
+                       input_meas = input_meas.to(device)
                        im_lq = model(input_meas)
-                       #residual = (_process_per_image(im_lq, meas.to("cuda:3")) + 1) / 2
                     if(pretrained_model == "lambda"):
-                       mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi")
-                       mask3d_batch_train = mask3d_batch_train.to("cuda:3")
+                       mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi", device = device)
+                       mask3d_batch_train = mask3d_batch_train.to(device)
                        meas = init_meas(gt, mask3d_batch_train, "Y")
                        im_lq = model(meas, input_train_mask)
-                       #residual = (_process_per_image(im_lq, meas.to("cuda:3")) + 1) / 2
                     elif(pretrained_model == "mst"):
-                       mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi")
-                       mask3d_batch_train = mask3d_batch_train.to("cuda:3")
-                       input_train_mask = input_train_mask.to("cuda:3")
+                       mask3d_batch_train, input_train_mask = init_mask(batch_size=gt.shape[0], mask_type="Phi", device = device)
+                       mask3d_batch_train = mask3d_batch_train.to(device)
+                       input_train_mask = input_train_mask.to(device)
                        meas = init_meas(gt, mask3d_batch_train, "H")
-                       input_meas = meas[0].to("cuda:3")
+                       input_meas = meas[0].to(device)
                        im_lq = model(input_meas, input_train_mask)
-                       #residual = (_process_per_image(im_lq, meas[1].to("cuda:3")) + 1) / 2
                     elif(pretrained_model == "ssr" or pretrained_model == "dpu"):
                         mask_path = "mask/mask_256_28.mat"
                         mask = sio.loadmat(mask_path)['mask']
-                        mask = torch.from_numpy(np.transpose(mask, (2, 0, 1))).to("cuda:3").float()
+                        mask = torch.from_numpy(np.transpose(mask, (2, 0, 1))).to(device).float()
                         Phi_batch = mask.unsqueeze(0).repeat(gt.shape[0], 1, 1, 1)
-                        Phi_s_batch = torch.zeros((gt.shape[0], 256, 310), dtype=gt.dtype).to("cuda:3")
+                        Phi_s_batch = torch.zeros((gt.shape[0], 256, 310), dtype=gt.dtype).to(device)
                         for k in range(gt.shape[0]):
                           Phi_s_batch[k] = torch.sum(shift_3(Phi_batch[k], 2) ** 2, 0)
                         Phi_s_batch[Phi_s_batch == 0] = 1
-                        meas = torch.zeros((gt.shape[0], 256, 310), dtype=gt.dtype).to("cuda:3")
-                        for k in range(gt.shape[0]):
-                           mea = shift_3(mask * gt[k], len_shift= 2)
-                           meas[k] = torch.sum(mea, 0).float()
-                        # 去掉第一维（通道数），因为这里只需要二维图像
-                        meas_image = meas[0]  # 获取形状为 (256, 310) 的数组
-                        import matplotlib.pyplot as plt
-                        # 保存为图片
-                        plt.imsave('meas_image.png', meas_image.cpu(), cmap='gray')
-                        lq = model(meas, input_mask = (Phi_batch, Phi_s_batch))
-                        lq = lq[8].clamp(min=0., max=1.)
-                        im_lq = lq
-                        #residual = (_process_per_image(im_lq, meas.to("cuda:3")) + 1) / 2
-                    #im_hq = im_lq + residual
-                    #save_gt = (gt - gt.min() / gt.max() - gt.min())
-                    #sio.savemat("first.mat", {'truth': gt.cpu().permute(0, 2, 3, 1), 'pred': im_lq.detach().cpu().permute(0, 2, 3, 1)})
-                    #im_lq = (im_lq - im_lq.min() / im_lq.max() - im_lq.min())
-                    #im_hq = (im_hq - im_hq.min()) / (im_hq.max() - im_hq.min())
-                    #residual_save=  (im_lq - im_lq.min()) / (im_lq.max() - im_lq.min()) - (im_hq - im_hq.min()) / (im_hq.max() - im_hq.min())
-                    #residual_save=  im_lq - im_hq
-                    #residual_save =  (im_hq - im_hq.min()) / (im_hq.max() - im_hq.min()) - (im_lq - im_lq.min()) / (im_lq.max() - im_lq.min())
-                    #residual_save =  (residual_save - residual_save .min()) / (residual_save .max() - residual_save.min())
-                    #sio.savemat("im_hq_single.mat", {'truth': np.array(save_gt.cpu().permute(0, 2, 3, 1)), 'pred': np.array(im_hq.detach().cpu().permute(0, 2, 3, 1))})
-                    #sio.savemat("residual_single.mat", {'truth': np.array(save_gt.detach().cpu().permute(0, 2, 3, 1)), 'pred': np.array((residual_save).detach().cpu().permute(0, 2, 3, 1))})
-                    #sio.savemat("im_lq_single.mat", {'truth': np.array(save_gt.cpu().permute(0, 2, 3, 1)), 'pred': np.array(im_lq.detach().cpu().permute(0, 2, 3, 1))})
-
+                        meas = torch.zeros((gt.shape[0], 256, 310), dtype=gt.dtype).to(device)                        
+                
                     results_gt[i] = np.array(gt.cpu().permute(0, 2, 3, 1).numpy().astype(np.float32), copy = True)
-                    
-                    #esults_residual[i] = np.array((residual_save.detach().cpu().permute(0, 2, 3, 1)).numpy())
-
                     results_lq[i] = np.array(im_lq.detach().cpu().permute(0, 2, 3, 1))
-                    
-                    #psnr_value = psnr_block(results_gt[i].astype(np.float64), results_lq[i].astype(np.float64))
                     psnr_value = psnr(results_gt[i], results_lq[i], data_range=1.0)
                     psnr_values.append(psnr_value)
                     print(f"PSNR: {psnr_value} dB")
-
                     ssim_value = ssim(results_gt[i], results_lq[i], data_range=1.0)
                     print(f"SSIM: {ssim_value} dB")
                     ssim_values.append(ssim_value)
-
                     i = i + 1
-
                     if return_tensor:
                         return_res[im_path.stem]=im_sr_tensor
-            sio.savemat("lq.mat", {'truth':  results_gt, 'pred':  results_lq})
-            #sio.savemat("residual.mat", {'truth':  results_gt, 'pred': results_residual})
-            #sio.savemat("initail.mat",  {'truth':  results_gt, 'pred':  results_inference})
-            
+            sio.savemat("results/orginal.mat", {'truth':  results_gt, 'pred':  results_lq})
             psnr_value = np.mean(np.array(psnr_values))
             print(f"Average_PSNR: {psnr_value} dB")
-
-            #psnr_value = psnr_block(results_gt, results_inference)
-            #print(f"Average_PSNR: {psnr_value} dB")
-
             average_ssim = np.mean(np.array(ssim_values))
             print(f"Average_SSIM: {average_ssim} dB")
 
