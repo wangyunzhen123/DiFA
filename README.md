@@ -6,7 +6,7 @@ pip install -r requirements.txt
 ```
 
 ## Prepare Dataset
-Download NTIRE ([Baidu Disk](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd=ntir)), ICVL ([Baidu Disk]((https://pan.baidu.com/s/12Tangm7beo_to8OcQKtbvg?pwd=icvl), code: icvl)), Harvard([Baidu Disk](https://pan.baidu.com/s/1ui2SsR3EFMVTFBUrDvD3Zg?pwd=hard), code: hard), and then put them into the corresponding folders of data/ and recollect them as the following form:
+Download NTIRE ([Baidu Disk](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd=ntir), code: ntire), ICVL ([Baidu Disk](https://pan.baidu.com/s/12Tangm7beo_to8OcQKtbvg?pwd=icvl), code: icvl)), Harvard([Baidu Disk](https://pan.baidu.com/s/1ui2SsR3EFMVTFBUrDvD3Zg?pwd=hard), code: hard), and then put them into the corresponding folders of data/ and recollect them as the following form:
 ```
 |--DiFASCI
     :
@@ -94,12 +94,12 @@ Download the necessary pre-trained model, i.e., pretrained Teacher model Resshif
 2. Adjust batchsize according your GPUS.
 
 ```sh
-python main_distill.py --cfg_path configs/DiFA.yaml --save_dir logs/SinSR
+python main.py --cfg_path configs/DiFA.yaml --save_dir logs/SinSR
 ```
 
 ## Acknowledgement
 
-This project is based on [ResShift](https://github.com/zsyOAOA/ResShift), [SinSR]() and . Thanks for the help from the author.
+This project is based on [ResShift](https://github.com/zsyOAOA/ResShift), [SinSR](https://github.com/wyf0912/SinSR) and [A Toolbox for Spectral Compressive Imaging](https://github.com/caiyuanhao1998/MST). Thanks for the help from the author.
 
 ## Citation
 Please cite our paper if you find our work useful. Thanks! 
