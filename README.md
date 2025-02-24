@@ -57,14 +57,14 @@ Download the pre-trained model zoo from ([Baidu Disk](https://pan.baidu.com/s/1j
 
 ```sh
 # Original model (w/o DiFA)
-python inference -i data/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
+python inference_initail -i data/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
 # Forexample, if we want to get results of DAUHST-9stg on NTIRE dataset, we can run below command
-python inference -i data/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
+python inference_initail -i data/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
 
 # DifASCI (w DiFA)
-python inference -i [image folder/image path] --ckpt [model folder/model path] --pretraine_model [initial predictor] --dataset [dataset] --gpu [gpu_id] # Inference
+python inference_difa -i [image folder/image path] --ckpt [model folder/model path] --pretraine_model [initial predictor] --dataset [dataset] --gpu [gpu_id] # Inference
 # Initial predictor = [hdnet, mst, ssr, dauhst, padut, dpu], dataset = [ntire, icvl，harvard].if we want to get results of DAUHST-DiFA on NTIRE dataset, we can run below command
-python inference -i data/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
+python inference_difa -i data/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
 ```
 
 ## Train
