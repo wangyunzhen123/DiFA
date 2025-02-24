@@ -44,46 +44,6 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 
 max_psnr = 0
 
-def psnr_single(ref, img):
-    PIXEL_MAX = 1.0  # 假设图像已经归一化到 [0, 1] 范围内
-    mse = F.mse_loss(img, ref)
-    psnr = 20 * torch.log10(PIXEL_MAX / torch.sqrt(mse + 1e-10))  # 避免除以零
-    return psnr
-
-def Quality_Index(ref, img, logger):
-    """
-    计算每个 (1, 28, 256, 256) 矩阵的 PSNR
-    ref 和 img 都是 (10, 28, 256, 256) 的矩阵
-    返回 (10,) 的张量，每个元素对应一个矩阵的 PSNR
-    """
-    N = ref.shape[0]
-    psnrs = torch.zeros(N, dtype=torch.float32)
-    ssims = torch.zeros(N, dtype=torch.float32)
-    for i in range(N):
-        psnrs[i] = psnr(ref[i].unsqueeze(0).cpu().numpy(), img[i].unsqueeze(0).cpu().numpy(), data_range=1.0)
-        ssims[i] = torch.tensor(ssim(ref[i].unsqueeze(0).cpu().numpy(), img[i].unsqueeze(0).cpu().numpy(), data_range=1.0, channel_axis=0))
-        logger.info(f'Sceen {i}: PSNR={psnrs[i].item()}, SSIM={ssims[i].item()}')
-    return psnrs.mean(), ssims.mean()
-
-def process_matrix_torch(matrix):
-    # 在长宽维度上逆时针旋转90度
-    rotated_matrix = torch.rot90(matrix, k=1, dims=(2, 3))
-    # 在水平维度上翻转
-    flipped_matrix = torch.flip(rotated_matrix, dims=[2])
-    return flipped_matrix
-
-def process_matrix(matrix):
-    rotated_matrix = np.rot90(matrix, k=-1, axes=(1, 2))
-    flipped_matrix = np.flip(rotated_matrix, axis=2)
-    return flipped_matrix
-
-def psnr_block(ref, img):
-    N, C, H, W = img.shape
-    PIXEL_MAX = 1.0  # 假设图像已经归一化到 [0, 1] 范围内
-    mse = F.mse_loss(img, ref, reduction='none').mean(dim=[2, 3])
-    psnr = 20 * torch.log10(PIXEL_MAX / torch.sqrt(mse + 1e-10))  # 避免除以零
-    return psnr.mean(dim=1).mean(dim=0)
-
 class TrainerBase:
     def __init__(self, configs):
         self.configs = configs
