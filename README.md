@@ -36,7 +36,7 @@ Download NTIRE ([Baidu Disk](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd
             ：  
             |--scene100.mat
           |--icvl_train.list
-          |--icvl_test.list
+          |--icvl_valid.list
         |--Harvard
           |--harvard_test 
             |--scene1.mat
@@ -49,7 +49,7 @@ Download NTIRE ([Baidu Disk](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd
             ：  
             |--scene200.mat
           |--harvard_train.list
-          |--harvard_test.list
+          |--harvard_valid.list
 ```
 
 ## Test:
