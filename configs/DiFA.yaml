@@ -176,13 +176,13 @@ data:
 #  train:
 #    type: harvard_train
 #    params:
-#      file_list: data/NTIRE/ntire_train.list
+#      file_list: data/HARVARD/harvard_train.list
 #
 #  val:
 #    type: harvard_test
 #    name: harvard
 #    params:
-#      file_list: data/NTIRE/ntire_valid.list
+#      file_list: data/HARVARD/harvard_valid.list
 
 train:
   learn_xT: True
