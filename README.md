@@ -6,7 +6,7 @@ pip install -r requirements.txt
 ```
 
 ## Prepare Dataset
-Download NTIRE ([Baidu Disk](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd=ntir), code: ntire), ICVL ([Baidu Disk](https://pan.baidu.com/s/12Tangm7beo_to8OcQKtbvg?pwd=icvl), code: icvl)), Harvard([Baidu Disk](https://pan.baidu.com/s/1ui2SsR3EFMVTFBUrDvD3Zg?pwd=hard), code: hard), and then put them into the corresponding folders of data/ and recollect them as the following form:
+Download NTIRE ([Baidu Disk](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd=ntir), code: ntire), ICVL ([Baidu Disk](https://pan.baidu.com/s/12Tangm7beo_to8OcQKtbvg?pwd=icvl), code: icvl), Harvard([Baidu Disk](https://pan.baidu.com/s/1ui2SsR3EFMVTFBUrDvD3Zg?pwd=hard), code: hard), and then put them into the corresponding folders of data/ and recollect them as the following form:
 ```
 |--DiFASCI
     :
