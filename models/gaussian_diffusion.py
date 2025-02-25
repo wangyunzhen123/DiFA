@@ -746,15 +746,15 @@ class GaussianDiffusion:
         return y + _extract_into_tensor(self.kappa * self.sqrt_etas, t, y.shape) * noise
 
     def training_losses_distill(
-            self, model, teacher_model, first_stage_model, msi2rgbnet, x_start, y, meas, input_setting, input_mask, loss_type, t, device, model_kwargs, noise=None
+            self, model, teacher_model, first_stage_model, msi2rgbnet, x, y, meas, input_setting, input_mask, loss_type, t, device, model_kwargs, noise=None
             ):
         """
         Compute training losses for a single timestep.
 
         :param model: the model to evaluate loss on.
         :param first_stage_model: autoencoder model
-        :param x_start: the [N x C x ...] tensor of inputs.
-        :param y: the [N x C x ...] tensor of degraded inputs.
+        :param x: the [N x C x ...] tensor of inputs.
+        :param y: if loss_type == MC:initial predictor; elif loss_type == EI:re-constructed initial predictor; elif loss_type ==   
         :param t: a batch of timestep indices.
         :param model_kwargs: if not None, a dict of extra keyword arguments to
             pass to the model. This can be used for conditioning.
@@ -766,40 +766,29 @@ class GaussianDiffusion:
         """
         if model_kwargs is None:
             model_kwargs = {}
-        """
-        sio.savemat("y.mat", {'truth': y.cpu().permute(0, 2, 3, 1)})
-        z_latent = self.encode_first_stage(y, first_stage_model, up_sample=False)
-        #z_original = first_stage_model.decode_list(z_latent) * 2 - 1
-        #sio.savemat("z_original.mat", {'truth': z_original.cpu().permute(0, 2, 3, 1)})
-        z_start_teacher_list = []
-        for g in range(26):
-            z_start_teacher = self.ddim_sample_loop(z_latent[g], teacher_model, noise, first_stage_model, clip_denoised=True if first_stage_model is None else False, apply_decoder=False, model_kwargs={'lq':z_latent[g]})["sample"]
-            z_start_teacher_list.append(z_start_teacher)
-        z_original = first_stage_model.decode_list(z_start_teacher_list)
-        sio.savemat("z_original.mat", {'truth': z_original.cpu().permute(0, 2, 3, 1)})
-        """
-        z_y = y[:,:,:,:256]
-        
-        #z_y = self.encode_first_stage(y, first_stage_model, up_sample=True) # TODO can be eliminated to speed up, since z_y is already obtained in self.ddim_sample_loop/p_sample_loop
+
+        x_init = y[:,:,:,:256]
         if noise is None:
-            noise = th.randn_like(z_y)
+            noise = th.randn_like(x_init)
         
         terms = {}
-        assert loss_type in ["MSE", "MC","EI", "DISTILL"]
+        assert loss_type in ["MC","EI", "DISTILL"]
         terms["loss"] = 0
-        z_t = self.prior_sample(z_y, noise)
+        # initial state x_t = x_init + noise
+        x_t = self.prior_sample(x_init, noise)
         pred_zstart = None
         # if not finetune_use_gt:
         if True:
-            # obtain *gt*, i.e., x_0 predicted from x_T                
             if loss_type == "MC":
-                model_output = model(self._scale_input(z_t, t), t, **model_kwargs)
-                model_output = (model_output + 1) / 2 + y
-                mask3d_batch_train, input_train_mask = init_mask(batch_size=model_output.shape[0], mask_type=input_mask, device=device)
+                # generate r in one step
+                r = (model(self._scale_input(x_t, t), t, **model_kwargs) + 1) / 2
+                # get refined image
+                x_1 = r + x_init
+                mask3d_batch_train, input_train_mask = init_mask(batch_size=x_1.shape[0], mask_type=input_mask, device=device)
                 if(input_setting == "Y"):
-                    y_1 = init_meas(model_output, mask3d_batch_train, input_setting).to(device)
+                    y_1 = init_meas(x_1, mask3d_batch_train, input_setting).to(device)
                 if(input_setting == "H"):
-                    _, y_1 = init_meas(model_output, mask3d_batch_train, input_setting)
+                    _, y_1 = init_meas(x_1, mask3d_batch_train, input_setting)
                     y_1 = y_1.to(device)
                 if(input_setting == "SSR" or input_setting == "DPU"):
                     mask_path = "mask/mask_256_28.mat"
@@ -808,184 +797,41 @@ class GaussianDiffusion:
                     Phi_batch = mask.unsqueeze(0)
                     Phi_s_batch = torch.sum(shift_3(mask, 2) ** 2, 0).unsqueeze(0)
                     Phi_s_batch[Phi_s_batch == 0] = 1
-                    y_1 = shift_3(mask * model_output[0], len_shift= 2)
+                    y_1 = shift_3(mask * x_1[0], len_shift= 2)
                     y_1 = torch.sum(y_1, 0).unsqueeze(0).to(device)
+                # compute MC loss
                 terms[loss_type] = mean_flat((meas - y_1) ** 2).to(device)
                 terms["loss"] += terms[loss_type]
 
             if loss_type == "EI":
-                model_output = model(self._scale_input(z_t, t), t, **model_kwargs)
-                model_output = (model_output + 1) / 2 + y.to(device)
-                terms[loss_type] = mean_flat((x_start - model_output) ** 2).to(device)
+                r = (model(self._scale_input(x_t, t), t, **model_kwargs) + 1) / 2
+                x_3 = r + x_init.to(device)
+                x_2 = x
+                # compute EC loss
+                terms[loss_type] = mean_flat((x_2 - x_3) ** 2).to(device)
                 terms["loss"] += terms[loss_type]
                 
             if loss_type == "DISTILL":
-                z_rgb = msi2rgbnet(z_y)
-                z_rgb = ((z_rgb - z_rgb.min()) / (z_rgb.max() - z_rgb.min()) * 2) - 1
-                z_start_teacher = self.ddim_sample_loop(z_rgb, teacher_model, noise, first_stage_model, clip_denoised=True if first_stage_model is None else False, apply_decoder=False, model_kwargs={'lq':z_rgb})["sample"]
-                z_diff_rgb = first_stage_model.decode(z_start_teacher) * 0.5 + 0.5
-                model_output = model(self._scale_input(z_t, t), t, **model_kwargs)
-                model_output = (model_output + 1) / 2 + y.to(device)
-                model_output_rgb = msi2rgbnet(model_output)
-                model_output_rgb = (model_output_rgb - model_output_rgb.min()) / (model_output_rgb.max() - model_output_rgb.min())
-                terms[loss_type] = mean_flat((model_output_rgb - z_diff_rgb) ** 2).to(device)
+                #convert x_init to rgb space and pass through pretrained Resshift
+                x_1 = x
+                x_init_rgb = msi2rgbnet(x_init)
+                x_init_rgb = ((x_init_rgb - x_init_rgb.min()) / (x_init_rgb.max() - x_init_rgb.min()) * 2) - 1
+                x_start_teacher = self.ddim_sample_loop(x_init_rgb, teacher_model, noise, first_stage_model, clip_denoised=True if first_stage_model is None else False, apply_decoder=False, model_kwargs={'lq':x_init_rgb})["sample"]
+                x_diff_rgb = first_stage_model.decode(x_start_teacher) * 0.5 + 0.5
+                #convert x_rfined to rgb space
+                x_refined_rgb = msi2rgbnet(x_1)
+                x_refined_rgb = (x_refined_rgb - x_refined_rgb.min()) / (x_refined_rgb.max() - x_refined_rgb.min())
+                #compute DISTILL loss
+                terms[loss_type] = mean_flat((x_diff_rgb - x_refined_rgb) ** 2).to(device)
                 terms["loss"] += terms[loss_type]
                 
-            if self.model_mean_type == ModelMeanType.START_X:      # predict x_0
-                pred_zstart = model_output.detach() 
+            if self.model_mean_type == ModelMeanType.START_X:
+                if loss_type == "MC":
+                   pred_zstart = x_1.detach()
+                else:
+                   pred_zstart = None
 
-        return terms, z_t, pred_zstart
-
-    def training_losses_distill_real(
-            self, model,  x_start, y, meas, input_setting, input_mask, loss_type, t, pxm, pym, model_kwargs,noise=None
-            ):
-        """
-        Compute training losses for a single timestep.
-
-        :param model: the model to evaluate loss on.
-        :param first_stage_model: autoencoder model
-        :param x_start: the [N x C x ...] tensor of inputs.
-        :param y: the [N x C x ...] tensor of degraded inputs.
-        :param t: a batch of timestep indices.
-        :param model_kwargs: if not None, a dict of extra keyword arguments to
-            pass to the model. This can be used for conditioning.
-        :param noise: if specified, the specific Gaussian noise to try to remove.
-        :return: a dict with the key "loss" containing a tensor of shape [N].
-                 Some mean or variance settings may also have other keys.
-                 
-        :finetune_use_gt: do not use teacher model, instead only use the groud-truth and its inverse
-        """
-        if model_kwargs is None:
-            model_kwargs = {}
-
-        z_y = y[:,:,:,:256]
-        #z_y = self.encode_first_stage(y, first_stage_model, up_sample=True) # TODO can be eliminated to speed up, since z_y is already obtained in self.ddim_sample_loop/p_sample_loop
-        if noise is None:
-            noise = th.randn_like(z_y)
-        
-        terms = {}
-        assert loss_type in ["MSE", "MC","EI", "DISTILL"]
-        terms["loss"] = 0
-        z_t = self.prior_sample(z_y, noise)
-        pred_zstart = None
-        # if not finetune_use_gt:
-        if True:
-            # obtain *gt*, i.e., x_0 predicted from x_T
-            gt = x_start
-            if loss_type == "MSE":
-                model_output = model(self._scale_input(z_t, t), t, **model_kwargs)
-                #model_output = (model_output + 1) / 2 + y.to(device)
-                model_output = (model_output + 1) / 2
-                target = gt.to(device)
-                assert model_output.shape == target.shape   
-                terms[loss_type] = mean_flat((target - model_output) ** 2 if loss_type=="MSE" else (target - model_output).abs()).to(device)        
-                terms["loss"] += terms[loss_type]
-                
-            if loss_type == "MC":
-                model_output = model(self._scale_input(z_t, t), t, **model_kwargs)
-                model_output = (model_output + 1) / 2 + y.to(device)
-                data = sio.loadmat("data/TSA_real_data/mask.mat")
-                mask = data['mask']
-                mask_3d = np.tile(mask[:, :, np.newaxis], (1, 1, 28))
-                pxm = pxm
-                pym = pym
-                mask_3d = mask_3d[pxm:pxm + 256:1, pym:pym + 256:1, :]
-                mask_3d_shift = np.zeros((256, 256 + (28 - 1) * 2, 28))
-                mask_3d_shift[:, 0:256, :] = mask_3d
-                for t in range(28):
-                    mask_3d_shift[:, :, t] = np.roll(mask_3d_shift[:, :, t], 2 * t, axis=1)
-                mask_3d_shift_s = np.sum(mask_3d_shift ** 2, axis=2, keepdims=False)
-                mask_3d_shift_s[mask_3d_shift_s == 0] = 1
-                mask_3d_shift = torch.FloatTensor(mask_3d_shift.copy()).permute(2,0,1)
-                mask_3d_shift_s = torch.FloatTensor(mask_3d_shift_s.copy())
-                input_mask = init_real_mask(mask_3d, mask_3d_shift, mask_3d_shift_s, input_mask)
-                if(input_setting == "Y"):
-                  y_1 = init_meas(model_output, torch.tensor(mask_3d.transpose(2, 0, 1)[np.newaxis,:]).to(device), input_setting).to(device)
-                if(input_setting == "H"):
-                  _, y_1 = init_meas(model_output, torch.tensor(mask_3d.transpose(2, 0, 1)[np.newaxis,:]).to(device), input_setting)
-                  y_1 = y_1.to(device)
-                if(input_setting == "SSR" or input_setting == "DPU"):
-                    mask_path = "mask/mask_256_28.mat"
-                    mask = sio.loadmat(mask_path)['mask']
-                    mask = torch.from_numpy(np.transpose(mask, (2, 0, 1))).to(device).float()
-                    Phi_batch = mask.unsqueeze(0)
-                    Phi_s_batch = torch.sum(shift_3(mask, 2) ** 2, 0).unsqueeze(0)
-                    Phi_s_batch[Phi_s_batch == 0] = 1
-                    y_1 = shift_3(mask * model_output[0], len_shift= 2)
-                    y_1 = torch.sum(y_1, 0).unsqueeze(0).to(device)
-                terms[loss_type] = mean_flat((meas - y_1) ** 2).to(device)
-                terms["loss"] += terms[loss_type]
-
-            if loss_type == "EI":
-                model_output = model(self._scale_input(z_t, t), t, **model_kwargs)
-                model_output = (model_output + 1) / 2 + y.to(device)            
-                terms[loss_type] = mean_flat((x_start - model_output) ** 2).to(device)
-
-            if loss_type == "DISTILL":
-                #msi2rgbnet = MSI2RGBNet().to(device)
-                z_rgb = msi2rgbnet(z_y)
-                # 随机选择裁剪的起始坐标
-                z_rgb = ((z_rgb - z_rgb.min()) / (z_rgb.max() - z_rgb.min()) * 2) - 1
-                #z_rgb_show = F.interpolate(z_rgb, size=(1024, 1024), mode='bicubic', align_corners=False) 
-                z_rgb_show = z_rgb
-                #z_rgb_latent = self.encode_first_stage(z_rgb, first_stage_model, up_sample=False)
-                z_start_teacher = self.ddim_sample_loop(z_rgb, teacher_model, noise, first_stage_model, clip_denoised=True if first_stage_model is None else False, apply_decoder=False, model_kwargs={'lq':z_rgb})["sample"]
-                z_diff_rgb = first_stage_model.decode(z_start_teacher) * 0.5 + 0.5
-                #z_diff_pca = z_start_teacher
-                model_output = model(self._scale_input(z_t, t), t, **model_kwargs)
-                residual_rgb = msi2rgbnet((model_output + 1) / 2)
-                model_output = (model_output + 1) / 2 + y.to(device)
-                #residual =  (y - y.min()) / (y.max() - y.min()) - (model_output - model_output.min()) / (model_output.max() - model_output.min())
-                model_output_rgb = msi2rgbnet(model_output)
-                #model_output_rgb = F.interpolate(model_output_rgb, size=(1024, 1024), mode='bicubic', align_corners=False)
-                model_output_rgb = (model_output_rgb - model_output_rgb.min()) / (model_output_rgb.max() - model_output_rgb.min())
-                #model_output_pca_latent = self.encode_first_stage(model_output_pca, first_stage_model, up_sample=False)
-                terms[loss_type] = mean_flat((model_output_rgb - z_diff_rgb) ** 2).to(device)
-                #terms[loss_type] = mean_flat((model_output_pca_latent - z_diff_pca) ** 2).to(device)
-
-                """
-                from PIL import Image
-                # 将张量从 GPU 移动到 CPU，解除半精度并转换为 NumPy 数组
-                z_rgb_cpu = z_rgb_show.detach().cpu().float().numpy()  # (1, 3, 256, 256)
-                z_diff_cpu = z_diff_rgb.detach().cpu().float().numpy()  # (1, 3, 256, 256)
-                model_output_cpu = model_output_rgb.detach().cpu().float().numpy()
-                #residual_cpu = residual_rgb.detach().cpu().float().numpy()
-                residual_cpu = model_output_cpu - z_rgb_cpu
-
-                # 去掉 batch 维度，得到 (3, 256, 256)
-                z_rgb_image = z_rgb_cpu[0]
-                z_diff_image = z_diff_cpu[0]
-                model_output_image = model_output_cpu[0]
-                residual_rgb = residual_cpu[0]
-                
-                # 将 (3, 256, 256) 转换为 (256, 256, 3)
-                z_rgb_image = z_rgb_image.transpose(1, 2, 0)
-                z_diff_image = z_diff_image.transpose(1, 2, 0)
-                model_output_image = model_output_image.transpose(1, 2, 0)
-                residual_rgb = residual_rgb.transpose(1, 2, 0)
-
-                # 将图像值从 (-1, 1) 范围（假设是经过前面归一化操作）转换为 (0, 255)，用于保存
-                z_rgb_image = ((z_rgb_image - z_rgb_image.min()) / (z_rgb_image.max() - z_rgb_image.min()) * 255).astype(np.uint8)
-                z_diff_image = ((z_diff_image - z_diff_image.min()) / (z_diff_image.max() - z_diff_image.min()) * 255).astype(np.uint8)
-                #z_diff_image = (z_diff_image * 255).astype(np.uint8)
-                model_output_image = ((model_output_image - model_output_image.min()) / (model_output_image.max() - model_output_image.min()) * 255).astype(np.uint8)
-                residual_rgb = ((residual_rgb - residual_rgb.min()) / (residual_rgb.max() - residual_rgb.min()) * 255).astype(np.uint8)
-                # 使用 PIL 保存图像
-                z_rgb_image_pil = Image.fromarray(z_rgb_image)
-                z_diff_image = Image.fromarray(z_diff_image)
-                model_output_image_pil = Image.fromarray(model_output_image)
-                residual_rgb_pil = Image.fromarray(residual_rgb)
-                
-                z_rgb_image_pil.save('z_rgb_image_pil.png')
-                z_diff_image.save('z_diff_image_pil.png')
-                model_output_image_pil.save('model_output_image_pil.png')
-                residual_rgb_pil.save('residaul_rgb_pil.png')
-                """
-            if self.model_mean_type == ModelMeanType.START_X:      # predict x_0
-                pred_zstart = model_output.detach() 
-
-        return terms, z_t, pred_zstart
-        
+        return terms, x_t, pred_zstart
         
     def cov_loss(self, noise):
         feat = noise
@@ -1879,4 +1725,3 @@ class GaussianDiffusionDDPM:
                 z_y = first_stage_model.encode(y)
                 out = z_y * self.scale_factor
                 return out.type(ori_dtype)
-
