@@ -93,7 +93,7 @@ diffusion:
 msi2rgbnet:
   target: models.msi2rgb.MSI2RGBNet
   params:
-    msi2rgb_weight: weights/msi2rgbnet.pth
+    msi2rgb_weight: model_zoo/weights/msi2rgbnet.pth
 
 pretrained:
    target: models.pretrained.dauhst.DAUHST
