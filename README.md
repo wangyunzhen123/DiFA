@@ -53,22 +53,7 @@ Download NTIRE ([Baidu Disk](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd
 ```
 
 ## Test:
-Download the pre-trained model zoo from ([Baidu Disk](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), code:mzoo) and place them to \model_zoo\init_predictor and \model_zoo\DiFA
-
-```sh
-# Original model (w/o DiFA)
-python inference_initail -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
-# initial predictor = [hdnet, mst, ssr, dauhst, padut, dpu], dataset = [ntire, icvl，harvard]. If we want to get results of DAUHST on NTIRE dataset, we can run below command
-python inference_initail -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
-
-# DifASCI (with DiFA)
-python inference_difa -i [image folder/image path] --ckpt [model folder/model path] --pretraine_model [initial predictor] --dataset [dataset] --gpu [gpu_id] # Inference
-# initial predictor = [hdnet, mst, ssr, dauhst, padut, dpu], dataset = [ntire, icvl，harvard]. If we want to get results of DAUHST-DiFA on NTIRE dataset, we can run below command
-python inference_difa -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
-```
-
-## Train
-Download the necessary pre-trained model, i.e., pretrained Teacher model Resshift, Autoencoder and MSItoRGBnetwork ([Baidu Disk](https://pan.baidu.com/s/1biDFqlwSqOhj9S7yZ12_eA?pwd=weig), code:weig), and place them to \model_zoo\weights. pretrained initial predictor ([Baidu Disk](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), code:mzoo), place them to \model_zoo\weights. And recollect them as the following form:
+Download the pre-trained model zoo from ([Baidu Disk](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), code:mzoo) and place them to \model_zoo\Init_predictor and \model_zoo\DiFA. And recollect them as the following form:
 ```
 |--DiFASCI
     :
@@ -89,6 +74,21 @@ Download the necessary pre-trained model, i.e., pretrained Teacher model Resshif
       |--dauhst_9stg.pth
       |--dpu_9stg.pkl
 ```
+
+```sh
+# Original model (w/o DiFA)
+python inference_initail -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
+# initial predictor = [hdnet, mst, ssr, dauhst, padut, dpu], dataset = [ntire, icvl，harvard]. If we want to get results of DAUHST on NTIRE dataset, we can run below command
+python inference_initail -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
+
+# DifASCI (with DiFA)
+python inference_difa -i [image folder/image path] --ckpt [model folder/model path] --pretraine_model [initial predictor] --dataset [dataset] --gpu [gpu_id] # Inference
+# initial predictor = [hdnet, mst, ssr, dauhst, padut, dpu], dataset = [ntire, icvl，harvard]. If we want to get results of DAUHST-DiFA on NTIRE dataset, we can run below command
+python inference_difa -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
+```
+
+## Train
+Download the necessary pre-trained model, i.e., pretrained Teacher model Resshift, Autoencoder and MSItoRGBnetwork ([Baidu Disk](https://pan.baidu.com/s/1biDFqlwSqOhj9S7yZ12_eA?pwd=weig), code:weig), and place them to \model_zoo\weights. pretrained initial predictor ([Baidu Disk](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), code:mzoo), place them to \model_zoo\weights. 
 
 1. Adjust the data path in the config file. Specifically, correct and complete paths in files of [traindata](./traindata/)
 2. Adjust batchsize according your GPUS.
