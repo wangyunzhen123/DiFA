@@ -37,12 +37,21 @@ from models.msi2rgb import MSI2RGBNet
 import torch
 import torch.nn.functional as F
 import math
-from models.ram.ram_lora import ram
 from transformers import AutoTokenizer, CLIPTextModel
 from skimage.metrics import structural_similarity as ssim
 from skimage.metrics import peak_signal_noise_ratio as psnr
 
 max_psnr = 0
+
+def Quality_Index(ref, img, logger):
+    N = ref.shape[0]
+    psnrs = torch.zeros(N, dtype=torch.float32)
+    ssims = torch.zeros(N, dtype=torch.float32)
+    for i in range(N):
+        psnrs[i] = psnr(ref[i].unsqueeze(0).cpu().numpy(), img[i].unsqueeze(0).cpu().numpy(), data_range=1.0)
+        ssims[i] = torch.tensor(ssim(ref[i].unsqueeze(0).cpu().numpy(), img[i].unsqueeze(0).cpu().numpy(), data_range=1.0, channel_axis=0))
+        logger.info(f'Sceen {i}: PSNR={psnrs[i].item()}, SSIM={ssims[i].item()}')
+    return psnrs.mean(), ssims.mean()
 
 class TrainerBase:
     def __init__(self, configs):
@@ -95,7 +104,7 @@ class TrainerBase:
             if not save_dir.exists() and self.rank == 0:
                 save_dir.mkdir(parents=True)
 
-        # text loggingc
+        # text logging
         if self.rank == 0:
             logtxet_path = save_dir / 'training.log'
             self.logger = logger
@@ -155,7 +164,6 @@ class TrainerBase:
 
 
         if self.configs.train.resume:
-        #resume = "/home/wyz/pythonproject/DiFA_distill/logs/SinSR/2024-11-08-11-45/ckpts/model_35500.pth"
             assert self.configs.train.resume.endswith(".pth") and os.path.isfile(self.configs.train.resume)
 
             if self.rank == 0:
@@ -808,11 +816,7 @@ class TrainerDistillDifIR(TrainerDifIR):
         teacher_model = util_common.get_obj_from_str(self.configs.teacher_model.target)(**params_teacher)
         self.msi2rgbnet = util_common.get_obj_from_str(self.configs.msi2rgbnet.target)(**params_msi2rgbnet).to(device)
 
-        #self.unet_layer_dict = {name: get_layer_number(name) for name in self.unet_lora_layers}
-        if self.num_gpus > 1:
-            self.teacher_model = DDP(teacher_model.to(device), device_ids=[self.rank,], broadcast_buffers=False if not self.uncertainty_hyper else True)  # wrap the network
-        else:
-            self.teacher_model = teacher_model.to(device)
+        self.teacher_model = teacher_model.to(device)
             
         teacher_ckpt_path = self.configs.teacher_model.teacher_ckpt_path
         if self.rank == 0:
@@ -822,47 +826,7 @@ class TrainerDistillDifIR(TrainerDifIR):
             ckpt = ckpt['state_dict']
         util_net.reload_model(self.teacher_model, ckpt) 
 
-        if self.distill_ddpm and self.rank == 0:
-            self.logger.info(f"[INFO]: Distilling the output from DDPM, which is only for the ablation study")
-        if self.uncertainty_hyper and self.rank == 0:
-            self.logger.info(f"[INFO]: Use the uncertainty to adaptively use the ground-truth and teacher-generated result")
-        if self.uncertainty_num_aux and self.rank == 0 and self.uncertainty_hyper:
-            self.logger.info(f"[INFO]: Use the {self.uncertainty_num_aux} auxilary output to estimate the uncertainty map")
-        if self.use_reflow and self.rank == 0:
-            self.logger.info(f"[INFO]: Use reflow")
-        if self.learn_xT and self.rank == 0:
-            assert not self.use_reflow, "since the time step is used to control predict x_0 or predict x_T, use_reflow cannot be used at the same time"
-            self.logger.info(f"[INFO]: Learn x_T")
-        
-        if self.finetune_use_gt and self.rank == 0:
-            # assert not self.learn_xT
-            self.logger.info(f"[INFO]: Finetuning the model using the gt images")
-
-        if self.xT_cov_loss and self.rank == 0:
-            assert self.finetune_use_gt
-            self.logger.info(f"[INFO]: Minimizing the covariance of the predicted noise of GT (weight: {self.xT_cov_loss:.2f})") 
-            
-            
-        if self.reformulated_reflow and self.rank == 0:
-            self.logger.info(f"[INFO]: Reformulated reflow")
-            raise NotImplementedError("Reformulated reflow is not implemented yet")
-        
-        if self.loss_in_image_space and self.rank == 0:
-            self.logger.info(f"[INFO]: Caculating the distillation loss and GT loss in the image space")
-            
-        if self.configs.model.ckpt_path is not None:
-            ckpt_path = self.configs.model.ckpt_path
-            if self.rank == 0:
-                self.logger.info(f"Initializing model from {ckpt_path}")
-            ckpt = torch.load(ckpt_path, map_location=f"cuda:{self.rank}")
-            if 'state_dict' in ckpt:
-                ckpt = ckpt['state_dict']
-            util_net.reload_model(self.model, ckpt)
-
-        if self.num_gpus > 1:
-            self.model = DDP(model.to(device), device_ids=[self.rank,], broadcast_buffers=False)  # wrap the network
-        else:
-            self.model = model.to(device)
+        self.model = model.to(device)
 
         # pretrained initial_predictor
         self.initial_predictor = util_common.instantiate_from_config(self.configs.pretrained).to(device)
@@ -924,23 +888,7 @@ class TrainerDistillDifIR(TrainerDifIR):
             input_setting = self.configs.pretrained.input_setting
             input_mask = self.configs.pretrained.input_mask
             model = self.configs.pretrained.name
-            compute_losses = functools.partial(
-                self.base_diffusion.training_losses_distill,
-                self.model,
-                self.teacher_model,
-                self.autoencoder,
-                self.msi2rgbnet,
-                micro_data['gt'], # image range 0-1
-                micro_data['lq'],
-                data['meas'],
-                input_setting,
-                input_mask,
-                "MC",
-                tt,
-                device,
-                model_kwargs=model_kwargs,
-                noise=None,
-            )
+            
             if self.configs.train.use_fp16:
                 with amp.autocast():
                     if last_batch or self.num_gpus <= 1:
@@ -952,78 +900,6 @@ class TrainerDistillDifIR(TrainerDifIR):
                 scaler.scale(loss).backward()
             else:
                 if last_batch or self.num_gpus <= 1:
-                    if(loss_type == "MSE"):
-                       losses_dict, z_t, z0_pred = compute_losses()
-                    if(loss_type == "MC"):
-                       losses_dict, z_t, z0_pred = compute_losses()
-                    if(loss_type == "EI"):
-                       compute_losses = functools.partial(
-                           self.base_diffusion.training_losses_distill,
-                           self.model,
-                           self.teacher_model,
-                           self.autoencoder,
-                           self.msi2rgbnet,
-                           micro_data['gt'], # image range 0-1
-                           micro_data['lq'],
-                           data['meas'],
-                           input_setting,
-                           input_mask,
-                           "MC",
-                           tt,
-                           device,
-                           model_kwargs=model_kwargs,
-                           noise=None,
-                       )
-                       losses, z_t, x_1 = compute_losses()
-                       losses_dict["MC"] = losses["MC"]
-                       x_2 = torch.rot90(x_1, k=1, dims=(2, 3))
-                       mask3d_batch_train, input_train_mask = init_mask(batch_size=x_2.shape[0], mask_type=input_mask, device=x_1.device)
-                       mask3d_batch_train = mask3d_batch_train.to(device)
-                       if(input_setting == "Y"):
-                           y_2 = init_meas(x_2, mask3d_batch_train, input_setting).to(device)
-                           lq = self.initial_predictor(y_2, input_train_mask).to(device)
-                       if(input_setting == "H"):
-                        if(model == 'hdnet'):
-                           y_2, _ = init_meas(x_2, mask3d_batch_train, input_setting)
-                           y_2 = y_2.to(device)
-                           lq = self.initial_predictor(y_2).to(device) 
-                        else:
-                           input_train_mask = input_train_mask.to(device)
-                           y_2, _ = init_meas(x_2, mask3d_batch_train, input_setting)
-                           y_2 = y_2.to(device)
-                           lq = self.initial_predictor(y_2, input_train_mask).to(device)
-                       if(input_setting == "SSR" or input_setting == "DPU"):
-                           mask_path = "mask/mask_256_28.mat"
-                           mask = sio.loadmat(mask_path)['mask']
-                           mask = torch.from_numpy(np.transpose(mask, (2, 0, 1))).to(device).float()
-                           Phi_batch = mask.unsqueeze(0).to(device)
-                           Phi_s_batch = torch.sum(shift_3(mask, 2) ** 2, 0).unsqueeze(0).to(device)
-                           Phi_s_batch[Phi_s_batch == 0] = 1
-                           y_2 = shift_3(mask * x_2[0], len_shift= 2)
-                           y_2 = torch.sum(y_2, 0).unsqueeze(0).to(device)
-                           lq = self.initial_predictor(y_2, input_mask = (Phi_batch, Phi_s_batch))
-                           lq = lq[8].clamp(min=0., max=1.)
-                       compute_losses_ei = functools.partial(
-                            self.base_diffusion.training_losses_distill,
-                            self.model,
-                            self.teacher_model,
-                            self.autoencoder,
-                            self.msi2rgbnet,
-                            x_2, # image range 0-1
-                            lq,
-                            data['meas'],
-                            input_setting,
-                            input_mask,
-                            "EI",
-                            tt,
-                            device,
-                            model_kwargs=model_kwargs,
-                            noise=None
-                        )
-                       losses, z_t, z0_pred = compute_losses_ei()
-                       losses_dict["EI"] = losses["EI"]
-                       losses_dict["loss"] = losses_dict["MC"] + losses_dict["EI"]
-
                     if(loss_type == "DISTILL"):
                        compute_losses = functools.partial(
                            self.base_diffusion.training_losses_distill,
@@ -1031,7 +907,7 @@ class TrainerDistillDifIR(TrainerDifIR):
                            self.teacher_model,
                            self.autoencoder,
                            self.msi2rgbnet,
-                           micro_data['gt'], # image range 0-1
+                           None,
                            micro_data['lq'],
                            data['meas'],
                            input_setting,
@@ -1044,22 +920,23 @@ class TrainerDistillDifIR(TrainerDifIR):
                        )
                        losses, z_t, x_1 = compute_losses()
                        losses_dict["MC"] = losses["MC"]
+                       # group opration on x_1
                        x_2 = torch.rot90(x_1, k=1, dims=(2, 3))
                        mask3d_batch_train, input_train_mask = init_mask(batch_size=x_2.shape[0], mask_type=input_mask, device=x_1.device)
                        mask3d_batch_train = mask3d_batch_train.to(device)
                        if(input_setting == "Y"):
                            y_2 = init_meas(x_2, mask3d_batch_train, input_setting).to(device)
-                           lq = self.initial_predictor(y_2, input_train_mask).to(device)
+                           re_x_init = self.initial_predictor(y_2, input_train_mask).to(device)
                        if(input_setting == "H"):
                         if(model == 'hdnet'):
                            y_2, _ = init_meas(x_2, mask3d_batch_train, input_setting)
                            y_2 = y_2.to(device)
-                           lq = self.initial_predictor(y_2).to(device) 
+                           re_x_init = self.initial_predictor(y_2).to(device) 
                         else:
                            input_train_mask = input_train_mask.to(device)
                            y_2, _ = init_meas(x_2, mask3d_batch_train, input_setting)
                            y_2 = y_2.to(device)
-                           lq = self.initial_predictor(y_2, input_train_mask).to(device)
+                           re_x_init = self.initial_predictor(y_2, input_train_mask).to(device)
                        if(input_setting == "SSR" or input_setting == "DPU"):
                            mask_path = "mask/mask_256_28.mat"
                            mask = sio.loadmat(mask_path)['mask']
@@ -1069,16 +946,15 @@ class TrainerDistillDifIR(TrainerDifIR):
                            Phi_s_batch[Phi_s_batch == 0] = 1
                            y_2 = shift_3(mask * x_2[0], len_shift= 2)
                            y_2 = torch.sum(y_2, 0).unsqueeze(0).to(device)
-                           lq = self.initial_predictor(y_2, input_mask = (Phi_batch, Phi_s_batch))
-                           lq = lq[8].clamp(min=0., max=1.)
+                           re_x_init = self.initial_predictor(y_2, input_mask = (Phi_batch, Phi_s_batch))[8].clamp(min=0., max=1.)
                        compute_losses_ei = functools.partial(
                             self.base_diffusion.training_losses_distill,
                             self.model,
                             self.teacher_model,
                             self.autoencoder,
                             self.msi2rgbnet,
-                            x_2, # image range 0-1
-                            lq,
+                            x_2, # roated x_1
+                            re_x_init, # re-reconstructed x_init
                             data['meas'],
                             input_setting,
                             input_mask,
@@ -1097,7 +973,7 @@ class TrainerDistillDifIR(TrainerDifIR):
                             self.teacher_model,
                             self.autoencoder,
                             self.msi2rgbnet,
-                            micro_data['gt'], # image range 0-1
+                            x_1, # 
                             micro_data['lq'],
                             data['meas'],
                             input_setting,
@@ -1111,76 +987,6 @@ class TrainerDistillDifIR(TrainerDifIR):
                        losses, z_t, z0_pred = compute_losses_distill()
                        losses_dict["DISTILL"] = losses["DISTILL"]
                        losses_dict["loss"] = losses_dict["MC"] + losses_dict["EI"] + 0.001 * losses_dict["DISTILL"]
-
-                    if(loss_type == "DISTILL_only"):
-                       compute_losses = functools.partial(
-                           self.base_diffusion.training_losses_distill,
-                           self.model,
-                           self.teacher_model,
-                           self.autoencoder,
-                           self.msi2rgbnet,
-                           micro_data['gt'], # image range 0-1
-                           micro_data['lq'],
-                           data['meas'],
-                           input_setting,
-                           input_mask,
-                           "MC",
-                           tt,
-                           device = device,
-                           model_kwargs=model_kwargs,
-                           noise=None,
-                       )
-                       losses, z_t, x_1 = compute_losses()
-                       losses_dict["MC"] = losses["MC"]
-                       x_2 = torch.rot90(x_1, k=1, dims=(2, 3))
-                       mask3d_batch_train, input_train_mask = init_mask(batch_size=x_2.shape[0], mask_type=input_mask)
-                       mask3d_batch_train = mask3d_batch_train.to(device)
-                       if(input_setting == "Y"):
-                           y_2 = init_meas(x_2, mask3d_batch_train, input_setting).to(device)
-                           lq = self.initial_predictor(y_2, input_train_mask).to(device)
-                       if(input_setting == "H"):
-                        if(model == 'hdnet'):
-                           y_2, _ = init_meas(x_2, mask3d_batch_train, input_setting)
-                           y_2 = y_2.to(device)
-                           lq = self.initial_predictor(y_2).to(device) 
-                        else:
-                           input_train_mask = input_train_mask.to(device)
-                           y_2, _ = init_meas(x_2, mask3d_batch_train, input_setting)
-                           y_2 = y_2.to(device)
-                           lq = self.initial_predictor(y_2, input_train_mask).to(device)
-                       if(input_setting == "SSR" or input_setting == "DPU"):
-                           mask_path = "mask/mask_256_28.mat"
-                           mask = sio.loadmat(mask_path)['mask']
-                           mask = torch.from_numpy(np.transpose(mask, (2, 0, 1))).to(device).float()
-                           Phi_batch = mask.unsqueeze(0).to(device)
-                           Phi_s_batch = torch.sum(shift_3(mask, 2) ** 2, 0).unsqueeze(0).to(device)
-                           Phi_s_batch[Phi_s_batch == 0] = 1
-                           y_2 = shift_3(mask * x_2[0], len_shift= 2)
-                           y_2 = torch.sum(y_2, 0).unsqueeze(0).to(device)
-                           lq = self.initial_predictor(y_2, input_mask = (Phi_batch, Phi_s_batch))
-                           lq = lq[8].clamp(min=0., max=1.)
-
-                       compute_losses_distill = functools.partial(
-                            self.base_diffusion.training_losses_distill,
-                            self.model,
-                            self.teacher_model,
-                            self.autoencoder,
-                            self.msi2rgbnet,
-                            micro_data['gt'], # image range 0-1
-                            micro_data['lq'],
-                            data['meas'],
-                            input_setting,
-                            input_mask,
-                            "DISTILL",
-                            tt,
-                            device = device,
-                            model_kwargs=model_kwargs,
-                            noise=None
-                        )
-                       losses, z_t, z0_pred = compute_losses_distill()
-                       losses_dict["DISTILL"] = losses["DISTILL"]
-                       losses_dict["loss"] = losses_dict["MC"] + 0.001 * losses_dict["DISTILL"]
-                       
 
                 else:
                     with self.model.no_sync():
