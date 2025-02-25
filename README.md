@@ -53,7 +53,7 @@ Download NTIRE ([Baidu Disk](https://pan.baidu.com/s/1tjM5PKznKaNkwbbfekneYw?pwd
 ```
 
 ## Test:
-Download the pre-trained model zoo from ([Baidu Disk](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), code:mzoo) and place them to \model_zoo\Init_predictor and \model_zoo\DiFA. And recollect them as the following form:
+Download the pre-trained model zoo from ([Baidu Disk](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), code:mzoo) and place them to \model_zoo\DiFA and \model_zoo\Init_predictor. And recollect them as the following form:
 ```
 |--DiFASCI
     :
@@ -77,12 +77,12 @@ Download the pre-trained model zoo from ([Baidu Disk](https://pan.baidu.com/s/1j
 
 ```sh
 # Original model (w/o DiFA)
-python inference_initail -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
+python inference_initail -i [image folder/image path] --ckpt [model folder/model path] --pretrained_model [initial predictor] --dataset [dataset] --gpu [gpu_id]
 # initial predictor = [hdnet, mst, ssr, dauhst, padut, dpu], dataset = [ntire, icvl，harvard]. If we want to get results of DAUHST on NTIRE dataset, we can run below command
 python inference_initail -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
 
 # DifASCI (with DiFA)
-python inference_difa -i [image folder/image path] --ckpt [model folder/model path] --pretraine_model [initial predictor] --dataset [dataset] --gpu [gpu_id] # Inference
+python inference_difa -i [image folder/image path] --ckpt [model folder/model path] --pretraine_model [initial predictor] --dataset [dataset] --gpu [gpu_id]
 # initial predictor = [hdnet, mst, ssr, dauhst, padut, dpu], dataset = [ntire, icvl，harvard]. If we want to get results of DAUHST-DiFA on NTIRE dataset, we can run below command
 python inference_difa -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA/dauhst_ntire_difa.pth --pretrained_model dauhst --dataset ntire --gpu cuda:0
 ```
