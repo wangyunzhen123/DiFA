@@ -26,7 +26,6 @@ def get_parser(**parser_kwargs):
     parser.add_argument("--seed", type=int, default=1, help="Random seed.")
     parser.add_argument("--one_step", action="store_true")
     parser.add_argument("--ckpt", type=str, default=None)
-    parser.add_argument("--refinement", type=str, default=None)
     parser.add_argument("--dataset", type=str, choices=["cave", "ntire", "icvl", "harvard"], default=None)
     parser.add_argument("--pretrained_model", type=str, choices=["mst", "dauhst", "padut", "admm", "lambda", "ssr", "dpu", "hdnet"], default=None, help="Select the pretrained model from: model1, model2, model3")
     parser.add_argument(
