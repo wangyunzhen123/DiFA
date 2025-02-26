@@ -88,7 +88,7 @@ python inference_difa -i data/NTIRE/ntire_test --ckpt model_zoo/DiFA/DAUSHT-DiFA
 ```
 
 ## Train
-Download the necessary pre-trained model, i.e., pretrained Teacher model Resshift, Autoencoder and MSItoRGBnetwork ([Baidu Disk](https://pan.baidu.com/s/1biDFqlwSqOhj9S7yZ12_eA?pwd=weig), code:weig), and place them to \model_zoo\weights. pretrained initial predictor ([Baidu Disk](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), code:mzoo), place them to \model_zoo\weights. 
+Download the necessary pre-trained model, i.e., pretrained Teacher model Resshift, Autoencoder and MSItoRGBnetwork ([Baidu Disk](https://pan.baidu.com/s/1biDFqlwSqOhj9S7yZ12_eA?pwd=weig), code:weig), and place them to \model_zoo\weights. pretrained initial predictor ([Baidu Disk](https://pan.baidu.com/s/1jS_e8gYutfJ_dMjIhmh1lQ?pwd=mzoo), code:mzoo), place them to ```\model_zoo\weights```. 
 
 1. Adjust pre-traiend initail_predictor and dataset in the config file [DiFA.yaml](./configs/DiFA.yaml). 
 2. Adjust batchsize according your GPUS.
